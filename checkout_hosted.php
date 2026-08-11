@@ -2,44 +2,78 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 # This is a sample page to understand how to connect payment gateway
 
 require_once(__DIR__ . "/lib/SslCommerzNotification.php");
 
-include("db_connection.php");
-include("OrderTransaction.php");
+require_once(__DIR__ . "/db_connection.php");
+require_once(__DIR__ . "/OrderTransaction.php");
+
+global $conn_integration;
 
 use SslCommerz\SslCommerzNotification;
 
 # Organize the submitted/inputted data
 $post_data = array();
 
-$post_data['total_amount'] = $_POST['amount'];
+$post_data['total_amount'] = isset($_POST['amount']) ? (float) $_POST['amount'] : 0;
 $post_data['currency'] = "BDT";
 $post_data['tran_id'] = "SSLCZ_TEST_" . uniqid();
 
+$billingHouseNumber = isset($_POST['house_number']) ? trim($_POST['house_number']) : '';
+$billingStreetAddress = isset($_POST['street_address']) ? trim($_POST['street_address']) : '';
+$billingAddress = trim($billingHouseNumber . ' ' . $billingStreetAddress);
+
+$shippingHouseNumber = isset($_POST['shipping_house_number']) ? trim($_POST['shipping_house_number']) : '';
+$shippingStreetAddress = isset($_POST['shipping_street_address']) ? trim($_POST['shipping_street_address']) : '';
+$shippingAddress = trim($shippingHouseNumber . ' ' . $shippingStreetAddress);
+
+$userId = null;
+if (isset($_POST['user_id']) && is_numeric($_POST['user_id'])) {
+    $userId = (int) $_POST['user_id'];
+} elseif (isset($_SESSION['user']) && !empty($_SESSION['user']->id)) {
+    $userId = (int) $_SESSION['user']->id;
+}
+
 # CUSTOMER INFORMATION
-$post_data['cus_name'] = isset($_POST['customer_name']) ? $_POST['customer_name'] : "John Doe";
-$post_data['cus_email'] = isset($_POST['customer_email']) ? $_POST['customer_email'] : "john.doe@email.com";
-$post_data['cus_add1'] = "Dhaka";
+$customerName = isset($_POST['customer_name']) && trim($_POST['customer_name']) !== '' ? trim($_POST['customer_name']) : "John Doe";
+$customerEmail = isset($_POST['customer_email']) && trim($_POST['customer_email']) !== '' ? trim($_POST['customer_email']) : "john.doe@email.com";
+$customerCity = isset($_POST['cus_city']) && trim($_POST['cus_city']) !== '' ? trim($_POST['cus_city']) : "Dhaka";
+$customerPostcode = isset($_POST['cus_postcode']) && trim($_POST['cus_postcode']) !== '' ? trim($_POST['cus_postcode']) : "1000";
+$customerMobile = isset($_POST['customer_mobile']) && trim($_POST['customer_mobile']) !== '' ? trim($_POST['customer_mobile']) : "01711111111";
+
+$post_data['cus_name'] = $customerName;
+$post_data['cus_email'] = $customerEmail;
+$post_data['cus_add1'] = $billingAddress !== '' ? $billingAddress : "Dhaka";
 $post_data['cus_add2'] = "Dhaka";
-$post_data['cus_city'] = "Dhaka";
+$post_data['cus_city'] = $customerCity;
 $post_data['cus_state'] = "Dhaka";
-$post_data['cus_postcode'] = "1000";
+$post_data['cus_postcode'] = $customerPostcode;
 $post_data['cus_country'] = "Bangladesh";
-$post_data['cus_phone'] = isset($_POST['customer_mobile']) ? $_POST['customer_mobile'] : "01711111111";
+$post_data['cus_phone'] = $customerMobile;
 $post_data['cus_fax'] = "01711111111";
 
 # SHIPMENT INFORMATION
+$shippingName = isset($_POST['shipping_name']) && trim($_POST['shipping_name']) !== '' ? trim($_POST['shipping_name']) : $customerName;
+$shippingCity = isset($_POST['shipping_city']) && trim($_POST['shipping_city']) !== '' ? trim($_POST['shipping_city']) : $customerCity;
+$shippingZipCode = isset($_POST['shipping_zip_code']) && trim($_POST['shipping_zip_code']) !== '' ? trim($_POST['shipping_zip_code']) : $customerPostcode;
+$shippingMobileNumber = isset($_POST['shipping_mobile_number']) && trim($_POST['shipping_mobile_number']) !== '' ? trim($_POST['shipping_mobile_number']) : $customerMobile;
+
 $post_data["shipping_method"] = "YES";
-$post_data['ship_name'] = "Store Test";
-$post_data['ship_add1'] = "Dhaka";
-$post_data['ship_add2'] = "Dhaka";
-$post_data['ship_city'] = "Dhaka";
+$post_data['ship_name'] = $shippingName;
+$post_data['ship_add1'] = $shippingAddress !== '' ? $shippingAddress : $post_data['cus_add1'];
+$post_data['ship_add2'] = "";
+$post_data['ship_city'] = $shippingCity;
 $post_data['ship_state'] = "Dhaka";
-$post_data['ship_postcode'] = "1000";
-$post_data['ship_phone'] = "";
+$post_data['ship_postcode'] = $shippingZipCode;
+$post_data['ship_phone'] = $shippingMobileNumber;
 $post_data['ship_country'] = "Bangladesh";
+
+$post_data['user_id'] = $userId;
 
 $post_data['emi_option'] = "1";
 $post_data["product_category"] = "Electronic";
@@ -47,100 +81,56 @@ $post_data["product_profile"] = "general";
 $post_data["product_name"] = "Computer";
 $post_data["num_of_item"] = "1";
 
-# OPTIONAL PARAMETERS
-// $post_data['value_a'] = "Regent Air";
-// $post_data['value_b'] = "ref002";
-// $post_data['value_c'] = "ref003";
-// $post_data['value_d'] = "ref004";
+# SHIPPING TABLE DATA
+$shipping_data = [
+    'customer_name' => $customerName,
+    'house_number' => $billingHouseNumber,
+    'street_address' => $billingStreetAddress,
+    'cus_city' => $customerCity,
+    'cus_postcode' => $customerPostcode,
+    'customer_mobile' => $customerMobile,
+    'customer_email' => $customerEmail,
+    'shipping_name' => $shippingName,
+    'shipping_house_number' => $shippingHouseNumber !== '' ? $shippingHouseNumber : $billingHouseNumber,
+    'shipping_street_address' => $shippingStreetAddress !== '' ? $shippingStreetAddress : $billingStreetAddress,
+    'shipping_city' => $shippingCity,
+    'shipping_zip_code' => $shippingZipCode,
+    'shipping_mobile_number' => $shippingMobileNumber,
+];
 
-# MANAGED TRANS
-//$post_data['multi_card_name'] = "brac_visa,dbbl_visa,city_visa,ebl_visa,brac_master,dbbl_master,city_master,ebl_master,city_amex,qcash,dbbl_nexus,bankasia,abbank,ibbl,mtbl,city";
-//$post_data['allowed_bin'] = "371598,371599,376947,376948,376949";
-//$post_data['multi_card_name'] = "bankasia,mtbl,city";
+# ORDER ITEMS DATA
+$items = [];
+if (isset($_POST['product_id']) && is_array($_POST['product_id'])) {
+    foreach ($_POST['product_id'] as $idx => $pid) {
+        $qty = isset($_POST['quantity'][$idx]) ? (int)$_POST['quantity'][$idx] : 1;
+        $itemTotal = isset($_POST['item_total'][$idx]) ? (float)$_POST['item_total'][$idx] : 0;
+        $items[] = [
+            'product_id' => (int)$pid,
+            'quantity' => $qty,
+            'item_total' => $itemTotal
+        ];
+    }
+} elseif (isset($_SESSION['cart']) && is_array($_SESSION['cart'])) {
+    foreach ($_SESSION['cart'] as $productId => $quantity) {
+        $pRes = $conn_integration->query("SELECT discount_price, regular_price FROM products WHERE id = " . (int)$productId);
+        $price = 0;
+        if ($pRes && $pRow = $pRes->fetch_assoc()) {
+            $price = !empty($pRow['discount_price']) ? $pRow['discount_price'] : ($pRow['regular_price'] ?? 0);
+        }
+        $items[] = [
+            'product_id' => (int)$productId,
+            'quantity' => (int)$quantity,
+            'item_total' => ((float)$price * (int)$quantity)
+        ];
+    }
+}
 
-
-# CART PARAMETERS
-// $post_data['cart'] = json_encode(array(
-//     array("sku" => "REF0001", "product" => "DHK TO BRS AC A1", "quantity" => "1", "amount" => "200.00"),
-//     array("sku" => "REF0002", "product" => "DHK TO BRS AC A2", "quantity" => "1", "amount" => "200.00"),
-//     array("sku" => "REF0003", "product" => "DHK TO BRS AC A3", "quantity" => "1", "amount" => "200.00"),
-//     array("sku" => "REF0004", "product" => "DHK TO BRS AC A4", "quantity" => "2", "amount" => "200.00")
-// ));
-
-//$post_data['emi_max_inst_option'] = "9";
-//$post_data['emi_selected_inst'] = "24";
-
-
-//$post_data['product_amount'] = "0";
-//$post_data['discount_amount'] = "5";
-/*
-$post_data['product_amount'] = "100";
-$post_data['vat'] = "5";
-$post_data['discount_amount'] = "5";
-$post_data['convenience_fee'] = "3";
-*/
-//$post_data['discount_amount'] = "5";
-
-//$post_data['multi_card_name'] = "brac_visa,brac_master";
-//$post_data['allowed_bin'] = "408860,458763,489035,432147,432145,548895,545610,545538,432149,484096,484097,464573,539932,436475";
-
-# RECURRING DATA
-// $schedule = array(
-//     "refer" => "5B90BA91AA3F2", # Subscriber id which generated in Merchant Admin panel
-//     "acct_no" => "01730671731",
-//     "type" => "daily", # Recurring Schedule - monthly,weekly,daily
-//     //"dayofmonth"	=>	"24", 	# 1st day of every month
-//     //"month"		=>	"8",	# 1st day of January for Yearly Recurring
-//     //"week"	=>	"sat",	# In case, weekly recurring
-
-// );
-
-
-// $post_data["product_shipping_contry"] = "Bangladesh";
-// $post_data["vip_customer"] = "YES";
-// $post_data["hours_till_departure"] = "12 hrs";
-// $post_data["flight_type"] = "Oneway";
-// $post_data["journey_from_to"] = "DAC-CGP";
-// $post_data["third_party_booking"] = "No";
-
-// $post_data["hotel_name"] = "Sheraton";
-// $post_data["length_of_stay"] = "2 days";
-// $post_data["check_in_time"] = "24 hrs";
-// $post_data["hotel_city"] = "Dhaka";
-
-
-// $post_data["product_type"] = "Prepaid";
-// $post_data["phone_number"] = "01711111111";
-// $post_data["country_topUp"] = "Bangladesh";
-
-// $post_data["shipToFirstName"] = "John";
-// $post_data["shipToLastName"] = "Doe";
-// $post_data["shipToStreet"] = "93 B, New Eskaton Road";
-// $post_data["shipToCity"] = "Dhaka";
-// $post_data["shipToState"] = "Dhaka";
-// $post_data["shipToPostalCode"] = "1000";
-// $post_data["shipToCountry"] = "Bangladesh";
-// $post_data["shipToEmail"] = "john.doe@email.com";
-// $post_data["ship_to_phone_number"] = "01711111111";
-
-# SPECIAL PARAM
-// $post_data['tokenize_id'] = "1";
-
-# 1 : Physical Goods
-# 2 : Non-Physical Goods Vertical(software)
-# 3 : Airline Vertical Profile
-# 4 : Travel Vertical Profile
-# 5 : Telecom Vertical Profile
-
-// $post_data["product_profile_id"] = "5";
-
-// $post_data["topup_number"] = "01711111111"; # topUpNumber
-
-# First, save the input data into local database table `orders`
+# Save into `orders`, `shipping`, and `order_items`
 $query = new OrderTransaction();
-$sql = $query->saveTransactionQuery($post_data);
-
-if ($conn_integration->query($sql) === TRUE) {
+try {
+    $orderId = $query->saveOrderWithDetails($conn_integration, $post_data, $shipping_data, $items);
+    $_SESSION['last_order_id'] = $orderId;
+    $_SESSION['last_tran_id'] = $post_data['tran_id'];
 
     # Call the Payment Gateway Library
     $sslcz = new SslCommerzNotification();
@@ -148,7 +138,8 @@ if ($conn_integration->query($sql) === TRUE) {
     if (!is_array($msg)) {
         echo $msg;
     }
-} else {
-    echo "Error: " . $sql . "<br>" . $conn_integration->error;
+} catch (Exception $e) {
+    echo "Error saving order: " . $e->getMessage();
 }
+
 

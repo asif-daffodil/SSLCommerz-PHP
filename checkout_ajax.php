@@ -130,17 +130,42 @@ $post_data["num_of_item"] = "1";
 
 // $post_data["product_profile_id"] = "5";
 
-// $post_data["topup_number"] = "01711111111"; # topUpNumber
+# SHIPPING TABLE DATA
+$shipping_data = [
+    'customer_name' => $post_data['cus_name'],
+    'house_number' => $requestData['house_number'] ?? '',
+    'street_address' => $requestData['street_address'] ?? $post_data['cus_add1'],
+    'cus_city' => $post_data['cus_city'],
+    'cus_postcode' => $post_data['cus_postcode'],
+    'customer_mobile' => $post_data['cus_phone'],
+    'customer_email' => $post_data['cus_email'],
+    'shipping_name' => $post_data['ship_name'],
+    'shipping_house_number' => $requestData['shipping_house_number'] ?? ($requestData['house_number'] ?? ''),
+    'shipping_street_address' => $requestData['shipping_street_address'] ?? $post_data['ship_add1'],
+    'shipping_city' => $post_data['ship_city'],
+    'shipping_zip_code' => $post_data['ship_postcode'],
+    'shipping_mobile_number' => $post_data['ship_phone'],
+];
 
-# First, save the input data into local database table `orders`
+# ORDER ITEMS DATA
+$items = [];
+if (!empty($requestData['cart']) && is_array($requestData['cart'])) {
+    foreach ($requestData['cart'] as $cItem) {
+        $items[] = [
+            'product_id' => (int)($cItem->product_id ?? $cItem['product_id'] ?? 0),
+            'quantity' => (int)($cItem->quantity ?? $cItem['quantity'] ?? 1),
+            'item_total' => (float)($cItem->amount ?? $cItem['amount'] ?? 0)
+        ];
+    }
+}
+
+# First, save the input data into local database tables `orders`, `shipping`, `order_items`
 $query = new OrderTransaction();
-$sql = $query->saveTransactionQuery($post_data);
-
-if ($conn_integration->query($sql) === TRUE) {
-
+try {
+    $orderId = $query->saveOrderWithDetails($conn_integration, $post_data, $shipping_data, $items);
     # Call the Payment Gateway Library
     $sslcz = new SslCommerzNotification();
     $sslcz->makePayment($post_data, 'checkout', 'plain');
-} else {
-    echo "Error: " . $sql . "<br>" . $conn_integration->error;
+} catch (Exception $e) {
+    echo "Error: " . $e->getMessage();
 }
